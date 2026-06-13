@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}エラー{% endblock %}
+
+{% block content %}
+<section class="card error-page">
+  <h2>エラーが発生しました</h2>
+  <p class="error-message">{{ message }}</p>
+  <a href="/" class="btn btn-primary">トップへ戻る</a>
+</section>
+{% endblock %}

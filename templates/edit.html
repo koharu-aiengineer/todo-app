@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Todo編集{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb">
+  <a href="{{ url_for('todo_list', user_id=user_id) }}">&larr; 一覧に戻る</a>
+</nav>
+
+<section class="card edit-form">
+  <h2>Todoを編集</h2>
+  <form method="post" id="edit-form" novalidate>
+    <div class="form-group">
+      <label for="title">タイトル <span class="required">*</span></label>
+      <input type="text" id="title" name="title" required maxlength="200"
+             value="{{ todo.title }}">
+    </div>
+    <div class="form-group">
+      <label for="content">内容</label>
+      <textarea id="content" name="content" rows="4">{{ todo.content }}</textarea>
+    </div>
+    <div class="form-group">
+      <label for="due_date">期日</label>
+      <input type="date" id="due_date" name="due_date" value="{{ todo.due_date }}">
+    </div>
+    <div class="form-group">
+      <label for="status">ステータス</label>
+      <select id="status" name="status">
+        <option value="pending" {{ 'selected' if todo.status == 'pending' else '' }}>未完了</option>
+        <option value="done"    {{ 'selected' if todo.status == 'done'    else '' }}>完了</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">保存する</button>
+      <a href="{{ url_for('todo_list', user_id=user_id) }}" class="btn btn-cancel"
+         id="cancel-btn">キャンセル</a>
+    </div>
+  </form>
+</section>
+
+<script>
+  // 未保存の変更がある場合に離脱確認を出す
+  (function () {
+    const form = document.getElementById('edit-form');
+    const cancelBtn = document.getElementById('cancel-btn');
+    let dirty = false;
+
+    form.addEventListener('input', () => { dirty = true; });
+    form.addEventListener('submit', () => { dirty = false; });
+
+    cancelBtn.addEventListener('click', (e) => {
+      if (dirty && !confirm('変更が保存されていません。一覧に戻りますか？')) {
+        e.preventDefault();
+      }
+    });
+  })();
+</script>
+{% endblock %}

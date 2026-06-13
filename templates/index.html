@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}Todoリスト{% endblock %}
+
+{% block content %}
+
+{# ── 追加フォーム ── #}
+<section class="card add-form">
+  <h2>新しいTodoを追加</h2>
+  <form method="post" novalidate>
+    <div class="form-group">
+      <label for="title">タイトル <span class="required">*</span></label>
+      <input type="text" id="title" name="title" required maxlength="200"
+             placeholder="例：企画書を作成する">
+    </div>
+    <div class="form-group">
+      <label for="content">内容</label>
+      <textarea id="content" name="content" rows="3"
+                placeholder="詳細メモ（任意）"></textarea>
+    </div>
+    <div class="form-group">
+      <label for="due_date">期日</label>
+      <input type="date" id="due_date" name="due_date">
+    </div>
+    <button type="submit" class="btn btn-primary">追加する</button>
+  </form>
+</section>
+
+{# ── Todo一覧 ── #}
+{% set pending_todos = todos | selectattr("status", "equalto", "pending") | list %}
+{% set done_todos    = todos | selectattr("status", "equalto", "done")    | list %}
+
+<section class="card todo-list">
+  <div class="list-header">
+    <h2>未完了のTodo</h2>
+    <span class="count-badge">{{ pending_todos | length }} 件</span>
+  </div>
+
+  {% if pending_todos %}
+    <ul class="todo-items">
+      {% for todo in pending_todos %}
+        {% set is_overdue = todo.due_date and todo.due_date < today %}
+        {% set is_urgent  = todo.due_date and today <= todo.due_date <= urgent_date %}
+        <li class="todo-item
+                   {{ 'todo-overdue' if is_overdue else '' }}
+                   {{ 'todo-urgent'  if is_urgent  else '' }}">
+
+          <form method="post"
+                action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
+            <button type="submit" class="check-btn"
+                    title="完了にする" aria-label="完了にする">&nbsp;</button>
+          </form>
+
+          <div class="todo-info">
+            <span class="todo-title">{{ todo.title }}</span>
+            {% if todo.content %}
+              <p class="todo-content">{{ todo.content }}</p>
+            {% endif %}
+            <div class="todo-meta">
+              {% if todo.due_date %}
+                <span class="todo-due
+                             {{ 'overdue-text' if is_overdue else '' }}
+                             {{ 'urgent-text'  if is_urgent  else '' }}">
+                  📅 {{ todo.due_date }}
+                  {% if is_overdue %}
+                    <span class="overdue-badge">期限切れ</span>
+                  {% elif is_urgent %}
+                    <span class="urgent-badge">もうすぐ期限</span>
+                  {% endif %}
+                </span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div class="todo-actions">
+            <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
+               class="btn btn-edit">編集</a>
+            <form method="post"
+                  action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
+                  onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
+              <button type="submit" class="btn btn-delete">削除</button>
+            </form>
+          </div>
+
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty-message">未完了のTodoはありません。</p>
+  {% endif %}
+</section>
+
+{# ── 完了済み（折りたたみ） ── #}
+{% if done_todos %}
+<section class="card todo-list">
+  <button class="done-toggle" id="done-toggle" aria-expanded="false"
+          onclick="toggleDone()">
+    <span class="done-toggle-label">完了済み（{{ done_todos | length }} 件）</span>
+    <span class="done-toggle-icon" id="done-icon">▶</span>
+  </button>
+
+  <ul class="todo-items done-list" id="done-list" hidden>
+    {% for todo in done_todos %}
+      <li class="todo-item todo-done">
+
+        <form method="post"
+              action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
+          <button type="submit" class="check-btn checked"
+                  title="未完了に戻す" aria-label="未完了に戻す">✓</button>
+        </form>
+
+        <div class="todo-info">
+          <span class="todo-title">{{ todo.title }}</span>
+          {% if todo.content %}
+            <p class="todo-content">{{ todo.content }}</p>
+          {% endif %}
+          <div class="todo-meta">
+            {% if todo.due_date %}
+              <span class="todo-due">📅 {{ todo.due_date }}</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="todo-actions">
+          <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
+             class="btn btn-edit">編集</a>
+          <form method="post"
+                action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
+                onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
+            <button type="submit" class="btn btn-delete">削除</button>
+          </form>
+        </div>
+
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{# ── URLブックマーク案内 ── #}
+<section class="url-notice">
+  <p class="url-notice-title">⚠️ このURLをブックマークしてください</p>
+  <p class="url-notice-desc">このURLを失うとリストにアクセスできなくなります。</p>
+  <div class="url-copy-row">
+    <input type="text" id="page-url" class="url-input" readonly
+           value="{{ request.url }}">
+    <button class="btn btn-copy" onclick="copyUrl()">コピー</button>
+  </div>
+  <p id="copy-msg" class="copy-msg" aria-live="polite"></p>
+</section>
+
+<script>
+  function toggleDone() {
+    const list   = document.getElementById('done-list');
+    const icon   = document.getElementById('done-icon');
+    const toggle = document.getElementById('done-toggle');
+    const isOpen = !list.hidden;
+    list.hidden  = isOpen;
+    icon.textContent = isOpen ? '▶' : '▼';
+    toggle.setAttribute('aria-expanded', String(!isOpen));
+  }
+
+  function copyUrl() {
+    const input = document.getElementById('page-url');
+    navigator.clipboard.writeText(input.value).then(() => {
+      const msg = document.getElementById('copy-msg');
+      msg.textContent = 'コピーしました！';
+      setTimeout(() => { msg.textContent = ''; }, 2000);
+    });
+  }
+</script>
+{% endblock %}
