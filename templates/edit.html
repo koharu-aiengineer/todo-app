@@ -20,8 +20,30 @@
       <textarea id="content" name="content" rows="4">{{ todo.content }}</textarea>
     </div>
     <div class="form-group">
-      <label for="due_date">期日</label>
-      <input type="date" id="due_date" name="due_date" value="{{ todo.due_date }}">
+      <label>期日・時刻</label>
+      <div class="date-time-row">
+        <input type="date" id="due_date" name="due_date" value="{{ todo.due_date }}">
+        <input type="time" id="due_time" name="due_time" value="{{ todo.due_time }}" placeholder="開始">
+        <span class="time-sep">〜</span>
+        <input type="time" id="due_end_time" name="due_end_time" value="{{ todo.due_end_time }}" placeholder="終了">
+      </div>
+      <p class="field-hint">時刻は任意。終了時刻を空白にすると開始+1時間で登録されます。</p>
+    </div>
+    <div class="form-group">
+      <label for="category">カテゴリ <span class="required">*</span></label>
+      <select id="category" name="category" required>
+        <option value="visit"    {{ 'selected' if todo.category == 'visit'    else '' }}>訪問</option>
+        <option value="contract" {{ 'selected' if todo.category == 'contract' else '' }}>契約</option>
+        <option value="other"    {{ 'selected' if (todo.category == 'other' or not todo.category) else '' }}>その他</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="priority">見込み <span class="required">*</span></label>
+      <select id="priority" name="priority" required>
+        <option value="◎" {{ 'selected' if todo.priority == '◎'                        else '' }}>◎</option>
+        <option value="○" {{ 'selected' if (todo.priority == '○' or not todo.priority) else '' }}>○</option>
+        <option value="△" {{ 'selected' if todo.priority == '△'                        else '' }}>△</option>
+      </select>
     </div>
     <div class="form-group">
       <label for="status">ステータス</label>

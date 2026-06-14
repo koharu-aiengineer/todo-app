@@ -34,15 +34,27 @@ SCOPES = [
 ]
 
 # 列定義（順序が重要。変更時は HEADER も合わせて更新する）
-COL_TODO_ID    = 0
-COL_USER_ID    = 1
-COL_TITLE      = 2
-COL_CONTENT    = 3
-COL_DUE_DATE   = 4
-COL_STATUS     = 5
-COL_CREATED_AT = 6
+COL_TODO_ID           = 0
+COL_USER_ID           = 1
+COL_TITLE             = 2
+COL_CONTENT           = 3
+COL_DUE_DATE          = 4
+COL_DUE_TIME          = 5
+COL_DUE_END_TIME      = 6
+COL_PRIORITY          = 7
+COL_STATUS            = 8
+COL_CALENDAR_EVENT_ID = 9
+COL_CREATED_AT        = 10
+COL_CATEGORY          = 11
 
-HEADER = ["todo_id", "user_id", "title", "content", "due_date", "status", "created_at"]
+HEADER = ["todo_id", "user_id", "title", "content", "due_date", "due_time", "due_end_time", "priority", "status", "calendar_event_id", "created_at", "category"]
+
+# 旧スキーマ（マイグレーション検出用）
+_HEADER_V1 = ["todo_id", "user_id", "title", "content", "due_date", "status", "created_at"]
+_HEADER_V2 = ["todo_id", "user_id", "title", "content", "due_date", "priority", "status", "created_at"]
+_HEADER_V3 = ["todo_id", "user_id", "title", "content", "due_date", "priority", "status", "calendar_event_id", "created_at"]
+_HEADER_V4 = ["todo_id", "user_id", "title", "content", "due_date", "due_time", "priority", "status", "calendar_event_id", "created_at"]
+_HEADER_V5 = ["todo_id", "user_id", "title", "content", "due_date", "due_time", "due_end_time", "priority", "status", "calendar_event_id", "created_at"]
 
 # モジュールレベルのキャッシュ（プロセスが生きている間は再利用）
 _client: Optional[gspread.Client] = None
@@ -104,8 +116,59 @@ def _get_worksheet() -> gspread.Worksheet:
 
     try:
         ws = spreadsheet.worksheet("todos")
-        # 既存シートのヘッダーを検証する
         existing_header = ws.row_values(1)
+
+        # v1 → v2 自動マイグレーション（priority カラムを挿入）
+        if existing_header == _HEADER_V1:
+            ws.insert_cols([[""]], col=6)
+            ws.update_cell(1, 6, "priority")
+            logger.info("スキーマを v1 → v2 に移行しました (priority カラムを追加)")
+            existing_header = ws.row_values(1)
+
+        # v2 → v3 自動マイグレーション（calendar_event_id カラムを挿入）
+        if existing_header == _HEADER_V2:
+            ws.insert_cols([[""]], col=8)
+            ws.update_cell(1, 8, "calendar_event_id")
+            logger.info("スキーマを v2 → v3 に移行しました (calendar_event_id カラムを追加)")
+            existing_header = ws.row_values(1)
+
+        # v3 → v4 自動マイグレーション（due_time カラムを挿入）
+        if existing_header == _HEADER_V3:
+            ws.insert_cols([[""]], col=6)
+            ws.update_cell(1, 6, "due_time")
+            logger.info("スキーマを v3 → v4 に移行しました (due_time カラムを追加)")
+            existing_header = ws.row_values(1)
+
+        # v4 → v5 自動マイグレーション（due_end_time カラムを挿入）
+        if existing_header == _HEADER_V4:
+            ws.insert_cols([[""]], col=7)
+            ws.update_cell(1, 7, "due_end_time")
+            logger.info("スキーマを v4 → v5 に移行しました (due_end_time カラムを追加)")
+            existing_header = ws.row_values(1)
+
+        # v5 → v6 自動マイグレーション（category カラム追加 + priority値変換）
+        if existing_header == _HEADER_V5:
+            # category 列をシート末尾に追加（先に resize で grid を拡張してから書き込む）
+            ws.resize(rows=ws.row_count, cols=12)
+            ws.update_cell(1, 12, "category")
+            logger.info("スキーマを v5 → v6 に移行しました (category カラムを追加)")
+
+            # priority 値を high/medium/low → ◎/○/△ に一括変換
+            _PRIORITY_MAP = {"high": "◎", "medium": "○", "low": "△"}
+            all_rows = ws.get_all_values()
+            updates = []
+            for i, row in enumerate(all_rows[1:], start=2):
+                if len(row) > COL_PRIORITY and row[COL_PRIORITY] in _PRIORITY_MAP:
+                    updates.append({
+                        "range": f"H{i}",
+                        "values": [[_PRIORITY_MAP[row[COL_PRIORITY]]]]
+                    })
+            if updates:
+                ws.batch_update(updates, value_input_option="RAW")
+                logger.info("priority 値を %d 件変換しました (high/medium/low → ◎/○/△)", len(updates))
+
+            existing_header = ws.row_values(1)
+
         if existing_header != HEADER:
             raise RuntimeError(
                 f"ワークシート 'todos' のヘッダーが想定と異なります。\n"
@@ -179,12 +242,22 @@ def get_todos(user_id: str) -> list[dict]:
     return todos
 
 
-def add_todo(user_id: str, title: str, content: str, due_date: str) -> dict:
+def add_todo(
+    user_id: str,
+    title: str,
+    content: str,
+    due_date: str,
+    due_time: str = "",
+    due_end_time: str = "",
+    priority: str = "○",
+    calendar_event_id: str = "",
+    category: str = "other",
+) -> dict:
     """新しい Todo を追加してその dict を返す。"""
     ws = _get_worksheet()
     todo_id = str(uuid.uuid4())
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row = [todo_id, user_id, title, content, due_date, "pending", created_at]
+    row = [todo_id, user_id, title, content, due_date, due_time, due_end_time, priority, "pending", calendar_event_id, created_at, category]
     _retry(lambda: ws.append_row(row, value_input_option="RAW"))
     logger.info("Todo を追加しました: todo_id=%s user_id=%s", todo_id, user_id)
     return dict(zip(HEADER, row))
@@ -207,7 +280,12 @@ def update_todo(
     title: str,
     content: str,
     due_date: str,
+    due_time: str,
+    due_end_time: str,
+    priority: str,
+    calendar_event_id: str,
     status: str,
+    category: str = "other",
 ) -> bool:
     """
     指定の Todo を更新する。
@@ -222,7 +300,7 @@ def update_todo(
 
     original_row = rows[idx - 1]
     created_at = original_row[COL_CREATED_AT] if len(original_row) > COL_CREATED_AT else ""
-    new_row = [todo_id, user_id, title, content, due_date, status, created_at]
+    new_row = [todo_id, user_id, title, content, due_date, due_time, due_end_time, priority, status, calendar_event_id, created_at, category]
 
     cell_range = f"A{idx}:{chr(ord('A') + len(HEADER) - 1)}{idx}"
     _retry(lambda: ws.update(cell_range, [new_row], value_input_option="RAW"))

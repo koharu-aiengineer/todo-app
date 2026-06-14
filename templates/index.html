@@ -2,170 +2,336 @@
 
 {% block title %}Todoリスト{% endblock %}
 
+{% block main_class %}main-wide{% endblock %}
+
+{% block extra_head %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/locales/ja.min.js"></script>
+{% endblock %}
+
 {% block content %}
 
-{# ── 追加フォーム ── #}
-<section class="card add-form">
-  <h2>新しいTodoを追加</h2>
-  <form method="post" novalidate>
-    <div class="form-group">
-      <label for="title">タイトル <span class="required">*</span></label>
-      <input type="text" id="title" name="title" required maxlength="200"
-             placeholder="例：企画書を作成する">
-    </div>
-    <div class="form-group">
-      <label for="content">内容</label>
-      <textarea id="content" name="content" rows="3"
-                placeholder="詳細メモ（任意）"></textarea>
-    </div>
-    <div class="form-group">
-      <label for="due_date">期日</label>
-      <input type="date" id="due_date" name="due_date">
-    </div>
-    <button type="submit" class="btn btn-primary">追加する</button>
-  </form>
-</section>
+{# ── 追加ボタンバー ── #}
+<div class="form-toggle-bar">
+  <button class="btn btn-primary" id="add-toggle-btn" onclick="toggleAddForm()">＋ 追加</button>
+</div>
 
-{# ── Todo一覧 ── #}
-{% set pending_todos = todos | selectattr("status", "equalto", "pending") | list %}
-{% set done_todos    = todos | selectattr("status", "equalto", "done")    | list %}
+{# ── 追加フォームパネル（折りたたみ） ── #}
+<div class="add-form-panel" id="add-form-panel" hidden>
+  <section class="card add-form">
+    <form method="post" action="{{ url_for('todo_list', user_id=user_id) }}" novalidate>
+      <div class="add-form-grid">
+        <div class="form-group">
+          <label for="title">タイトル <span class="required">*</span></label>
+          <input type="text" id="title" name="title" required maxlength="200"
+                 placeholder="例：企画書を作成する">
+        </div>
+        <div class="form-group">
+          <label for="content">内容</label>
+          <textarea id="content" name="content" rows="2"
+                    placeholder="詳細メモ（任意）"></textarea>
+        </div>
+        <div class="form-group">
+          <label>期日・時刻</label>
+          <div class="date-time-row">
+            <input type="date" id="due_date" name="due_date">
+            <input type="time" id="due_time" name="due_time" placeholder="開始">
+            <span class="time-sep">〜</span>
+            <input type="time" id="due_end_time" name="due_end_time" placeholder="終了">
+          </div>
+          <p class="field-hint">時刻は任意。終了時刻空白 → 開始+1時間</p>
+        </div>
+        <div class="form-group">
+          <label for="category">カテゴリ <span class="required">*</span></label>
+          <select id="category" name="category" required>
+            <option value="visit">訪問</option>
+            <option value="contract">契約</option>
+            <option value="other" selected>その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="priority">見込み <span class="required">*</span></label>
+          <select id="priority" name="priority" required>
+            <option value="◎">◎</option>
+            <option value="○" selected>○</option>
+            <option value="△">△</option>
+          </select>
+        </div>
+      </div>
+      <div class="add-form-actions">
+        <button type="submit" class="btn btn-primary">追加する</button>
+        <button type="button" class="btn btn-cancel" onclick="toggleAddForm()">キャンセル</button>
+      </div>
+    </form>
+  </section>
+</div>
 
-<section class="card todo-list">
-  <div class="list-header">
-    <h2>未完了のTodo</h2>
-    <span class="count-badge">{{ pending_todos | length }} 件</span>
-  </div>
+{# ── リスト・カレンダー（常時表示） ── #}
+<div class="view-layout" id="view-layout">
 
-  {% if pending_todos %}
-    <ul class="todo-items">
-      {% for todo in pending_todos %}
-        {% set is_overdue = todo.due_date and todo.due_date < today %}
-        {% set is_urgent  = todo.due_date and today <= todo.due_date <= urgent_date %}
-        <li class="todo-item
-                   {{ 'todo-overdue' if is_overdue else '' }}
-                   {{ 'todo-urgent'  if is_urgent  else '' }}">
+  {# 左ペイン：Todoリスト #}
+  <div class="list-pane">
+    {% set pending_todos = todos | selectattr("status", "equalto", "pending") | list %}
+    {% set done_todos    = todos | selectattr("status", "equalto", "done")    | list %}
 
-          <form method="post"
-                action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
-            <button type="submit" class="check-btn"
-                    title="完了にする" aria-label="完了にする">&nbsp;</button>
-          </form>
+    <section class="card todo-list">
+      <div class="list-header">
+        <h2>未完了のTodo</h2>
+        <span class="count-badge">{{ pending_todos | length }} 件</span>
+      </div>
+      <div class="csv-panel">
+        <div class="csv-quick-btns">
+          <button class="btn btn-csv-quick" onclick="setCsvRange('今週')">今週</button>
+          <button class="btn btn-csv-quick" onclick="setCsvRange('先週')">先週</button>
+          <button class="btn btn-csv-quick" onclick="setCsvRange('今月')">今月</button>
+          <button class="btn btn-csv-quick" onclick="setCsvRange('先月')">先月</button>
+        </div>
+        <div class="csv-range-row">
+          <input type="date" id="csv-start" class="csv-date-input">
+          <span class="time-sep">〜</span>
+          <input type="date" id="csv-end" class="csv-date-input">
+          <button class="btn btn-csv" onclick="downloadCsv()">CSV出力</button>
+        </div>
+      </div>
 
-          <div class="todo-info">
-            <span class="todo-title">{{ todo.title }}</span>
-            {% if todo.content %}
-              <p class="todo-content">{{ todo.content }}</p>
-            {% endif %}
-            <div class="todo-meta">
-              {% if todo.due_date %}
-                <span class="todo-due
-                             {{ 'overdue-text' if is_overdue else '' }}
-                             {{ 'urgent-text'  if is_urgent  else '' }}">
-                  📅 {{ todo.due_date }}
-                  {% if is_overdue %}
-                    <span class="overdue-badge">期限切れ</span>
-                  {% elif is_urgent %}
-                    <span class="urgent-badge">もうすぐ期限</span>
+      {% if pending_todos %}
+        <ul class="todo-items">
+          {% for todo in pending_todos %}
+            {% set is_overdue = todo.due_date and todo.due_date < today %}
+            {% set is_urgent  = todo.due_date and today <= todo.due_date <= urgent_date %}
+            <li class="todo-item
+                       {{ 'todo-overdue' if is_overdue else '' }}
+                       {{ 'todo-urgent'  if is_urgent  else '' }}">
+
+              <form method="post"
+                    action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
+                <button type="submit" class="check-btn"
+                        title="完了にする" aria-label="完了にする">&nbsp;</button>
+              </form>
+
+              <div class="todo-info">
+                <span class="todo-title">{{ todo.title }}</span>
+                {% if todo.content %}
+                  <p class="todo-content">{{ todo.content }}</p>
+                {% endif %}
+                <div class="todo-meta">
+                  {% set p = todo.priority or '○' %}
+                  {% set p_css = {'◎': 'high', '○': 'medium', '△': 'low'} %}
+                  {% set cat_label = {'visit': '訪問', 'contract': '契約', 'other': 'その他'} %}
+                  <span class="category-badge">{{ cat_label.get(todo.category, todo.category) }}</span>
+                  <span class="priority-badge priority-{{ p_css.get(p, 'medium') }}">{{ p }}</span>
+                  {% if todo.due_date %}
+                    <span class="todo-due
+                                 {{ 'overdue-text' if is_overdue else '' }}
+                                 {{ 'urgent-text'  if is_urgent  else '' }}">
+                      📅 {{ todo.due_date }}{% if todo.due_time %} {{ todo.due_time }}{% endif %}
+                      {% if is_overdue %}
+                        <span class="overdue-badge">期限切れ</span>
+                      {% elif is_urgent %}
+                        <span class="urgent-badge">もうすぐ期限</span>
+                      {% endif %}
+                    </span>
                   {% endif %}
-                </span>
-              {% endif %}
-            </div>
-          </div>
+                </div>
+              </div>
 
-          <div class="todo-actions">
-            <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
-               class="btn btn-edit">編集</a>
+              <div class="todo-actions">
+                <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
+                   class="btn btn-edit">編集</a>
+                <form method="post"
+                      action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
+                      onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
+                  <button type="submit" class="btn btn-delete">削除</button>
+                </form>
+              </div>
+
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-message">未完了のTodoはありません。</p>
+      {% endif %}
+    </section>
+
+    {% if done_todos %}
+    <section class="card todo-list">
+      <button class="done-toggle" id="done-toggle" aria-expanded="false"
+              onclick="toggleDone()">
+        <span class="done-toggle-label">完了済み（{{ done_todos | length }} 件）</span>
+        <span class="done-toggle-icon" id="done-icon">▶</span>
+      </button>
+
+      <ul class="todo-items done-list" id="done-list" hidden>
+        {% for todo in done_todos %}
+          <li class="todo-item todo-done">
+
             <form method="post"
-                  action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
-                  onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
-              <button type="submit" class="btn btn-delete">削除</button>
+                  action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
+              <button type="submit" class="check-btn checked"
+                      title="未完了に戻す" aria-label="未完了に戻す">✓</button>
             </form>
-          </div>
 
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="empty-message">未完了のTodoはありません。</p>
-  {% endif %}
-</section>
+            <div class="todo-info">
+              <span class="todo-title">{{ todo.title }}</span>
+              {% if todo.content %}
+                <p class="todo-content">{{ todo.content }}</p>
+              {% endif %}
+              <div class="todo-meta">
+                {% set p = todo.priority or '○' %}
+                {% set p_css = {'◎': 'high', '○': 'medium', '△': 'low'} %}
+                {% set cat_label = {'visit': '訪問', 'contract': '契約', 'other': 'その他'} %}
+                <span class="category-badge">{{ cat_label.get(todo.category, todo.category) }}</span>
+                <span class="priority-badge priority-{{ p_css.get(p, 'medium') }}">{{ p }}</span>
+                {% if todo.due_date %}
+                  <span class="todo-due">📅 {{ todo.due_date }}{% if todo.due_time %} {{ todo.due_time }}{% endif %}</span>
+                {% endif %}
+              </div>
+            </div>
 
-{# ── 完了済み（折りたたみ） ── #}
-{% if done_todos %}
-<section class="card todo-list">
-  <button class="done-toggle" id="done-toggle" aria-expanded="false"
-          onclick="toggleDone()">
-    <span class="done-toggle-label">完了済み（{{ done_todos | length }} 件）</span>
-    <span class="done-toggle-icon" id="done-icon">▶</span>
-  </button>
+            <div class="todo-actions">
+              <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
+                 class="btn btn-edit">編集</a>
+              <form method="post"
+                    action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
+                    onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
+                <button type="submit" class="btn btn-delete">削除</button>
+              </form>
+            </div>
 
-  <ul class="todo-items done-list" id="done-list" hidden>
-    {% for todo in done_todos %}
-      <li class="todo-item todo-done">
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
 
-        <form method="post"
-              action="{{ url_for('todo_complete', user_id=user_id, todo_id=todo.todo_id) }}">
-          <button type="submit" class="check-btn checked"
-                  title="未完了に戻す" aria-label="未完了に戻す">✓</button>
-        </form>
-
-        <div class="todo-info">
-          <span class="todo-title">{{ todo.title }}</span>
-          {% if todo.content %}
-            <p class="todo-content">{{ todo.content }}</p>
-          {% endif %}
-          <div class="todo-meta">
-            {% if todo.due_date %}
-              <span class="todo-due">📅 {{ todo.due_date }}</span>
-            {% endif %}
-          </div>
-        </div>
-
-        <div class="todo-actions">
-          <a href="{{ url_for('todo_edit', user_id=user_id, todo_id=todo.todo_id) }}"
-             class="btn btn-edit">編集</a>
-          <form method="post"
-                action="{{ url_for('todo_delete', user_id=user_id, todo_id=todo.todo_id) }}"
-                onsubmit="return confirm('「{{ todo.title }}」を削除しますか？')">
-            <button type="submit" class="btn btn-delete">削除</button>
-          </form>
-        </div>
-
-      </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{# ── URLブックマーク案内 ── #}
-<section class="url-notice">
-  <p class="url-notice-title">⚠️ このURLをブックマークしてください</p>
-  <p class="url-notice-desc">このURLを失うとリストにアクセスできなくなります。</p>
-  <div class="url-copy-row">
-    <input type="text" id="page-url" class="url-input" readonly
-           value="{{ request.url }}">
-    <button class="btn btn-copy" onclick="copyUrl()">コピー</button>
+    {# URLブックマーク案内 #}
+    <section class="url-notice">
+      <p class="url-notice-title">⚠️ このURLをブックマークしてください</p>
+      <div class="url-copy-row">
+        <input type="text" id="page-url" class="url-input" readonly
+               value="{{ request.url.split('?')[0] }}">
+        <button class="btn btn-copy" onclick="copyUrl()">コピー</button>
+      </div>
+      <p id="copy-msg" class="copy-msg" aria-live="polite"></p>
+    </section>
   </div>
-  <p id="copy-msg" class="copy-msg" aria-live="polite"></p>
-</section>
+
+  {# 右ペイン：カレンダー #}
+  <div class="calendar-pane">
+    <div class="card calendar-card">
+      <div class="calendar-legend">
+        <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>◎</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>○</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#10b981"></span>△</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#9ca3af"></span>完了</span>
+      </div>
+      <div id="calendar"></div>
+    </div>
+  </div>
+
+</div>
 
 <script>
+  function toggleAddForm() {
+    var panel  = document.getElementById('add-form-panel');
+    var layout = document.getElementById('view-layout');
+    var btn    = document.getElementById('add-toggle-btn');
+    var opening = panel.style.display !== 'block';
+    if (opening) {
+      panel.style.display  = 'block';
+      layout.style.display = 'none';
+      btn.textContent = '✕ 閉じる';
+    } else {
+      panel.style.display  = 'none';
+      layout.style.display = '';
+      btn.textContent = '＋ 追加';
+      if (window._calendar) window._calendar.updateSize();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var cal = new FullCalendar.Calendar(document.getElementById('calendar'), {
+      initialView: 'dayGridMonth',
+      locale: 'ja',
+      height: 'auto',
+      events: '{{ url_for("todo_events", user_id=user_id) }}',
+      headerToolbar: {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,listMonth'
+      },
+      buttonText: { today: '今日', month: '月', list: 'リスト' },
+      eventClick: function (info) {
+        info.jsEvent.preventDefault();
+        if (info.event.url) window.location.href = info.event.url;
+      },
+      eventDidMount: function (info) {
+        if (info.event.extendedProps.status === 'done') {
+          info.el.style.textDecoration = 'line-through';
+          info.el.style.opacity = '0.6';
+        }
+      }
+    });
+    cal.render();
+    window._calendar = cal;
+  });
+
+  function _fmtDate(d) {
+    return d.toISOString().split('T')[0];
+  }
+
+  function setCsvRange(period) {
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var start, end;
+    var dow = today.getDay(); // 0=日 1=月 …
+    var diffToMon = (dow === 0) ? -6 : 1 - dow;
+
+    if (period === '今週') {
+      start = new Date(today); start.setDate(today.getDate() + diffToMon);
+      end   = new Date(start);  end.setDate(start.getDate() + 6);
+    } else if (period === '先週') {
+      start = new Date(today); start.setDate(today.getDate() + diffToMon - 7);
+      end   = new Date(start);  end.setDate(start.getDate() + 6);
+    } else if (period === '今月') {
+      start = new Date(today.getFullYear(), today.getMonth(), 1);
+      end   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (period === '先月') {
+      start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      end   = new Date(today.getFullYear(), today.getMonth(), 0);
+    }
+    document.getElementById('csv-start').value = _fmtDate(start);
+    document.getElementById('csv-end').value   = _fmtDate(end);
+  }
+
+  function downloadCsv() {
+    var start = document.getElementById('csv-start').value;
+    var end   = document.getElementById('csv-end').value;
+    if (!start || !end) { alert('開始日と終了日を選択してください。'); return; }
+    var base = '{{ url_for("todo_csv", user_id=user_id) }}';
+    window.location.href = base + '?start=' + start + '&end=' + end;
+  }
+
+  // ページ読み込み時に今週をデフォルト設定
+  setCsvRange('今週');
+
   function toggleDone() {
-    const list   = document.getElementById('done-list');
-    const icon   = document.getElementById('done-icon');
-    const toggle = document.getElementById('done-toggle');
-    const isOpen = !list.hidden;
-    list.hidden  = isOpen;
+    var list   = document.getElementById('done-list');
+    var icon   = document.getElementById('done-icon');
+    var toggle = document.getElementById('done-toggle');
+    var isOpen = !list.hidden;
+    list.hidden = isOpen;
     icon.textContent = isOpen ? '▶' : '▼';
     toggle.setAttribute('aria-expanded', String(!isOpen));
   }
 
   function copyUrl() {
-    const input = document.getElementById('page-url');
-    navigator.clipboard.writeText(input.value).then(() => {
-      const msg = document.getElementById('copy-msg');
+    var input = document.getElementById('page-url');
+    navigator.clipboard.writeText(input.value).then(function () {
+      var msg = document.getElementById('copy-msg');
       msg.textContent = 'コピーしました！';
-      setTimeout(() => { msg.textContent = ''; }, 2000);
+      setTimeout(function () { msg.textContent = ''; }, 2000);
     });
   }
 </script>
